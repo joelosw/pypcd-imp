@@ -95,6 +95,9 @@ Thanks! Please submit a pull request.
 
 I want to congratulate you / insult you
 ----------
-My email is `dimatura@cmu.edu`.
+Original Developers email is `dimatura@cmu.edu`.
 
-Copyright (C) 2015 Daniel Maturana
+Copyright (C) 2015 - 2018 Daniel Maturana
+
+My email is `joel@stefamon.de`.
+Copyright (C) 2023 Joel Oswald
