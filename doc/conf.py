@@ -57,7 +57,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = 'pypcd-imp'
+project = 'pypcd_imp'
 copyright = '2015, Daniel Maturana, 2023 Joel Oswald'
 
 # The version info for the project you're documenting, acts as replacement for

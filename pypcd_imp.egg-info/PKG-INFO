@@ -1,0 +1,40 @@
+Metadata-Version: 2.1
+Name: pypcd-imp
+Version: 0.1.2
+Summary: Pure Python PCD reader/writer
+Home-page: https://github.com/joelosw/pypcd-imp
+Download-URL: 
+Author: Daniel Maturana
+Author-email: dimatura@cmu.edu
+Maintainer: Joel Oswald
+Maintainer-email: joel@stefamon.de
+License: MIT
+Platform: OS Independent
+Classifier: Development Status :: 3 - Alpha
+Classifier: Environment :: Console
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python
+Classifier: Topic :: Scientific/Engineering
+License-File: LICENSE
+
+pypcd_imp
+========
+
+Pure Python reader/writer for the PCL ``pcd`` data format for point clouds.
+Small Improvements over dimaturas original project.
+Please go to the repository README_.
+
+.. _README: https://github.com/joelosw/pypcd-imp/blob/master/README.md
+
+License
+=======
+``pypcd_imp`` is licensed under the terms of the MIT license. See the file
+"LICENSE" for information on the history of this software, terms & conditions
+for usage, and a DISCLAIMER OF ALL WARRANTIES.
+
+All trademarks referenced herein are property of their respective holders.
+
+Copyright (c) 2015--, Daniel Maturana
+2023 Joel Oswald
