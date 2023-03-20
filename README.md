@@ -27,7 +27,7 @@ Example
 -------
 
 ```python
-import pypcd
+from pypcd_imp import pypcd
 # also can read from file handles.
 pc = pypcd.PointCloud.from_path('foo.pcd')
 # pc.pc_data has the data as a structured array
