@@ -702,8 +702,6 @@ class PointCloud(object):
         # pdb.set_trace()
         md = self.get_metadata()
         assert(_metadata_is_consistent(md))
-        print(self.pc_data.size)
-        print(self.points)
         assert(self.pc_data.size == self.points)
         assert(self.width*self.height == self.points)
         assert(len(self.fields) == len(self.count))
