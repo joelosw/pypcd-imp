@@ -7,7 +7,7 @@ Pure Python module to read and write point clouds stored in the [PCD file
 format](http://pointclouds.org/documentation/tutorials/pcd_file_format.php),
 used by the [Point Cloud Library](http://pointclouds.org/).
 Slightly adapted and improved from [klintan](https://github.com/klintan/pypcd) and [dimatira](https://github.com/dimatura/pypcd).
-Cannow handle Structured PointClouds (at least in binary compressed format)
+Can now handle Structured PointClouds (at least in binary compressed format)
 
 Why?
 ---
