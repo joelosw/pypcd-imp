@@ -1,24 +1,30 @@
 """
 Read and write PCL .pcd files in python.
-dimatura@cmu.edu, 2013
-
-TODO deal properly with padding
-TODO deal properly with multicount fields
-TODO better support for rgb nonsense
+dimatura@cmu.edu, 2013-2018
+joel.oswald@iosb.fraunhofer.de, 2023
+- TODO better API for wacky operations.
+- TODO add a cli for common operations.
+- TODO deal properly with padding
+- TODO deal properly with multicount fields
+- TODO better support for rgb nonsense
 """
 
 import re
 import struct
 import copy
-from io import StringIO as sio
 import numpy as np
 import warnings
 import lzf
 
+try:
+    from StringIO import StringIO, BytesIO
+except ImportError:
+    from io import BytesIO, StringIO
+
 HAS_SENSOR_MSGS = True
 try:
     from sensor_msgs.msg import PointField
-    from . import numpy_pc2  # needs sensor_msgs
+    import numpy_pc2  # needs sensor_msgs
 except ImportError:
     HAS_SENSOR_MSGS = False
 
@@ -65,6 +71,7 @@ numpy_pcd_type_mappings = [(np.dtype('float32'), ('F', 4)),
                            (np.dtype('uint16'), ('U', 2)),
                            (np.dtype('uint32'), ('U', 4)),
                            (np.dtype('uint64'), ('U', 8)),
+                           (np.dtype('int8'), ('I', 1)),
                            (np.dtype('int16'), ('I', 2)),
                            (np.dtype('int32'), ('I', 4)),
                            (np.dtype('int64'), ('I', 8))]
@@ -73,12 +80,12 @@ pcd_type_to_numpy_type = dict((q, p) for (p, q) in numpy_pcd_type_mappings)
 
 
 def parse_header(lines):
+    """ Parse header of PCD files.
+    """
     metadata = {}
     for ln in lines:
         if ln.startswith('#') or len(ln) < 2:
             continue
-        ln = ln.replace(' _ ',' s ',1)
-        ln = ln.replace(' _ ',' m ',1)
         match = re.match('(\w+)\s+([\w\s\.]+)', ln)
         if not match:
             warnings.warn("warning: can't understand line: %s" % ln)
@@ -104,11 +111,13 @@ def parse_header(lines):
         metadata['viewpoint'] = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
     if 'version' not in metadata:
         metadata['version'] = '.7'
+    if 'height' not in metadata:
+        metadata['height'] = 1
     return metadata
 
 
 def write_header(metadata, rename_padding=False):
-    """ given metadata as dictionary return a string header.
+    """ Given metadata as dictionary, return a string header.
     """
     template = """\
 VERSION {version}
@@ -146,7 +155,7 @@ DATA {data}
 
 
 def _metadata_is_consistent(metadata):
-    """ sanity check for metadata. just some basic checks.
+    """ Sanity check for metadata. Just some basic checks.
     """
     checks = []
     required = ('version', 'fields', 'size', 'width', 'height', 'points',
@@ -185,10 +194,12 @@ def _metadata_is_consistent(metadata):
 
 
 def _build_dtype(metadata):
-    """ build numpy structured array dtype from pcl metadata.
-    note that fields with count > 1 are 'flattened' by creating multiple
+    """ Build numpy structured array dtype from pcl metadata.
+
+    Note that fields with count > 1 are 'flattened' by creating multiple
     single-count fields.
-    TODO: allow 'proper' multi-count fields.
+
+    *TODO* allow 'proper' multi-count fields.
     """
     fieldnames = []
     typenames = []
@@ -208,14 +219,14 @@ def _build_dtype(metadata):
 
 
 def build_ascii_fmtstr(pc):
-    """ make a format string for printing to ascii, using fields
-    %.8f minimum for rgb
-    %.10f for more general use?
+    """ Make a format string for printing to ascii.
+
+    Note %.8f is minimum for rgb.
     """
     fmtstr = []
     for t, cnt in zip(pc.type, pc.count):
         if t == 'F':
-            fmtstr.extend(['%.10f']*cnt)
+            fmtstr.extend(['%.10e']*cnt)
         elif t == 'I':
             fmtstr.extend(['%d']*cnt)
         elif t == 'U':
@@ -226,6 +237,8 @@ def build_ascii_fmtstr(pc):
 
 
 def parse_ascii_pc_data(f, dtype, metadata):
+    """ Use numpy to parse ascii pointcloud data.
+    """
     return np.loadtxt(f, dtype=dtype, delimiter=' ')
 
 
@@ -237,10 +250,13 @@ def parse_binary_pc_data(f, dtype, metadata):
 
 
 def parse_binary_compressed_pc_data(f, dtype, metadata):
-    # compressed size of data (uint32)
-    # uncompressed size of data (uint32)
-    # compressed data
-    # junk
+    """ Parse lzf-compressed data.
+    Format is undocumented but seems to be:
+    - compressed size of data (uint32)
+    - uncompressed size of data (uint32)
+    - compressed data
+    - junk
+    """
     fmt = 'II'
     compressed_size, uncompressed_size =\
         struct.unpack(fmt, f.read(struct.calcsize(fmt)))
@@ -250,13 +266,13 @@ def parse_binary_compressed_pc_data(f, dtype, metadata):
     # should we read buf as raw binary?
     buf = lzf.decompress(compressed_data, uncompressed_size)
     if len(buf) != uncompressed_size:
-        raise Exception('Error decompressing data')
+        raise IOError('Error decompressing data')
     # the data is stored field-by-field
-    pc_data = np.zeros(metadata['width'], dtype=dtype)
+    pc_data = np.zeros(metadata['width']* metadata['height'], dtype=dtype)
     ix = 0
     for dti in range(len(dtype)):
         dt = dtype[dti]
-        bytes = dt.itemsize * metadata['width']
+        bytes = dt.itemsize * metadata['width'] * metadata['height']
         column = np.fromstring(buf[ix:(ix+bytes)], dt)
         pc_data[dtype.names[dti]] = column
         ix += bytes
@@ -264,18 +280,21 @@ def parse_binary_compressed_pc_data(f, dtype, metadata):
 
 
 def point_cloud_from_fileobj(f):
-    """ parse pointcloud coming from file object f
+    """ Parse pointcloud coming from file object f
     """
     header = []
-    while True:
-        ln = f.readline().strip()
-        if not isinstance(ln, str):
-            ln = ln.decode('utf-8')
-        header.append(ln)
-        if ln.startswith('DATA'):
-            metadata = parse_header(header)
-            dtype = _build_dtype(metadata)
-            break
+    try:
+        while True:
+            ln = f.readline().strip()
+            if not isinstance(ln, str):
+                ln = ln.decode('utf-8')
+            header.append(ln)
+            if ln.startswith('DATA'):
+                metadata = parse_header(header)
+                dtype = _build_dtype(metadata)
+                break
+    except StopIteration:
+        raise ValueError("Could not parse header")
     if metadata['data'] == 'ascii':
         pc_data = parse_ascii_pc_data(f, dtype, metadata)
     elif metadata['data'] == 'binary':
@@ -297,15 +316,21 @@ def point_cloud_from_path(fname):
 
 
 def point_cloud_from_buffer(buf):
-    fileobj = sio.StringIO(buf)
+    fileobj = BytesIO(buf)
     pc = point_cloud_from_fileobj(fileobj)
     fileobj.close()  # necessary?
     return pc
 
 
+def point_cloud_from_string(string):
+    with StringIO(string) as fileobj:
+        pc = point_cloud_from_fileobj(fileobj)
+    return pc
+
+
 def point_cloud_to_fileobj(pc, fileobj, data_compression=None):
-    """ write pointcloud as .pcd to fileobj.
-    if data_compression is not None it overrides pc.data.
+    """ Write pointcloud as .pcd to fileobj.
+    If data_compression is not None it overrides pc.data.
     """
     metadata = pc.get_metadata()
     if data_compression is not None:
@@ -317,14 +342,18 @@ def point_cloud_to_fileobj(pc, fileobj, data_compression=None):
     fileobj.write(header)
     if metadata['data'].lower() == 'ascii':
         fmtstr = build_ascii_fmtstr(pc)
-        np.savetxt(fileobj, pc.pc_data, fmt=fmtstr)
+        if pc.pc_data.size == 1:
+            np.savetxt(fileobj, pc.pc_data.reshape((1,)), fmt=fmtstr)
+        else:
+            np.savetxt(fileobj, pc.pc_data, fmt=fmtstr)
+
     elif metadata['data'].lower() == 'binary':
         fileobj.write(pc.pc_data.tostring())
     elif metadata['data'].lower() == 'binary_compressed':
         # TODO
-        # a '_' field is ignored by pcl and breakes compressed point clouds.
+        # a '_' field is ignored by pcl and breaks compressed point clouds.
         # changing '_' to '_padding' or other name fixes this.
-        # admittedly padding shouldn't be compressed in the first place
+        # admittedly padding shouldn't be compressed in the first place.
         # reorder to column-by-column
         uncompressed_lst = []
         for fieldname in pc.pc_data.dtype.names:
@@ -355,33 +384,35 @@ def point_cloud_to_path(pc, fname):
 
 
 def point_cloud_to_buffer(pc, data_compression=None):
-    fileobj = sio.StringIO()
+    fileobj = BytesIO()
     point_cloud_to_fileobj(pc, fileobj, data_compression)
     return fileobj.getvalue()
 
 
 def save_point_cloud(pc, fname):
-    """ save pointcloud to fname in ascii format
+    """ Save pointcloud to fname in ascii format.
     """
     with open(fname, 'wb') as f:
         point_cloud_to_fileobj(pc, f, 'ascii')
 
 
 def save_point_cloud_bin(pc, fname):
-    """ save pointcloud to fname in binary format
+    """ Save pointcloud to fname in binary format.
     """
     with open(fname, 'wb') as f:
         point_cloud_to_fileobj(pc, f, 'binary')
 
 
 def save_point_cloud_bin_compressed(pc, fname):
+    """ Save pointcloud to fname in binary compressed format.
+    """
     with open(fname, 'wb') as f:
         point_cloud_to_fileobj(pc, f, 'binary_compressed')
 
 
 def save_xyz_label(pc, fname, use_default_lbl=False):
-    """ save a simple (x y z label) pointcloud, ignoring all other features.
-    label is initialized to 1000, for jptview.
+    """ Save a simple (x y z label) pointcloud, ignoring all other features.
+    Label is initialized to 1000, for an obscure program I use.
     """
     md = pc.get_metadata()
     if not use_default_lbl and ('label' not in md['fields']):
@@ -396,6 +427,8 @@ def save_xyz_label(pc, fname, use_default_lbl=False):
 
 
 def save_xyz_intensity_label(pc, fname, use_default_lbl=False):
+    """ Save XYZI point cloud.
+    """
     md = pc.get_metadata()
     if not use_default_lbl and ('label' not in md['fields']):
         raise Exception('label is not a field in this point cloud')
@@ -412,7 +445,11 @@ def save_xyz_intensity_label(pc, fname, use_default_lbl=False):
 
 
 def save_txt(pc, fname, header=True):
-    """ TODO support multi-count fields
+    """ Save to csv-style text file, separated by spaces.
+
+    TODO:
+    - support multi-count fields.
+    - other delimiters.
     """
     with open(fname, 'w') as f:
         if header:
@@ -429,20 +466,21 @@ def save_txt(pc, fname, header=True):
 
 
 def update_field(pc, field, pc_data):
-    """ updates field in-place.
+    """ Updates field in-place.
     """
     pc.pc_data[field] = pc_data
     return pc
 
 
 def add_fields(pc, metadata, pc_data):
-    """ builds copy of pointcloud with extra fields
-    multi-count fields are sketchy
+    """ Builds copy of pointcloud with extra fields.
+
+    Multi-count fields are sketchy, yet again.
     """
     if len(set(metadata['fields']).intersection(set(pc.fields))) > 0:
         raise Exception("Fields with that name exist.")
 
-    if pc.points != len(pc_data):
+    if pc.points != pc_data.size:
         raise Exception("Mismatch in number of points.")
 
     new_metadata = pc.get_metadata()
@@ -470,7 +508,7 @@ def add_fields(pc, metadata, pc_data):
     new_dtype = [(f, pc.pc_data.dtype[f])
                  for f in pc.pc_data.dtype.names] + dtype
 
-    new_data = np.empty(len(pc.pc_data), new_dtype)
+    new_data = np.empty(pc.pc_data.size, new_dtype)
     for n in pc.pc_data.dtype.names:
         new_data[n] = pc.pc_data[n]
     for n, n_tmp in zip(fieldnames, pc_data.dtype.names):
@@ -483,6 +521,9 @@ def add_fields(pc, metadata, pc_data):
 
 
 def cat_point_clouds(pc1, pc2):
+    """ Concatenate two point clouds into bigger point cloud.
+    Point clouds must have same metadata.
+    """
     if len(pc1.fields) != len(pc2.fields):
         raise ValueError("Pointclouds must have same fields")
     new_metadata = pc1.get_metadata()
@@ -513,7 +554,7 @@ def make_xyz_point_cloud(xyz, metadata=None):
     xyz = xyz.astype(np.float32)
     pc_data = xyz.view(np.dtype([('x', np.float32),
                                  ('y', np.float32),
-                                 ('z', np.float32)]))
+                                 ('z', np.float32)])).squeeze()
     # pc_data = np.rec.fromarrays([xyz[:,0], xyz[:,1], xyz[:,2]], dtype=dt)
     # data = np.rec.fromarrays([xyz.T], dtype=dt)
     pc = PointCloud(md, pc_data)
@@ -550,8 +591,10 @@ def make_xyz_rgb_point_cloud(xyz_rgb, metadata=None):
 
 
 def encode_rgb_for_pcl(rgb):
-    """ Input is Nx3 uint8 array with RGB values.
-    Output is Nx1 float32 array with bit-packed RGB, for PCL.
+    """ Encode bit-packed RGB for use with PCL.
+
+    :param rgb: Nx3 uint8 array with RGB values.
+    :rtype: Nx1 float32 array with bit-packed RGB, for PCL.
     """
     assert(rgb.dtype == np.uint8)
     assert(rgb.ndim == 2)
@@ -564,12 +607,18 @@ def encode_rgb_for_pcl(rgb):
 
 
 def decode_rgb_from_pcl(rgb):
+    """ Decode the bit-packed RGBs used by PCL.
+
+    :param rgb: An Nx1 array.
+    :rtype: Nx3 uint8 array with one column per color.
+    """
+
     rgb = rgb.copy()
     rgb.dtype = np.uint32
     r = np.asarray((rgb >> 16) & 255, dtype=np.uint8)
     g = np.asarray((rgb >> 8) & 255, dtype=np.uint8)
     b = np.asarray(rgb & 255, dtype=np.uint8)
-    rgb_arr = np.zeros((len(rgb), 3), dtype=np.uint8)
+    rgb_arr = np.zeros((rgb.size, 3), dtype=np.uint8)
     rgb_arr[:, 0] = r
     rgb_arr[:, 1] = g
     rgb_arr[:, 2] = b
@@ -577,7 +626,10 @@ def decode_rgb_from_pcl(rgb):
 
 
 def make_xyz_label_point_cloud(xyzl, label_type='f'):
-    """ TODO i labels? """
+    """ Make XYZL point cloud from numpy array.
+
+    TODO i labels?
+    """
     md = {'version': .7,
           'fields': ['x', 'y', 'z', 'label'],
           'count': [1, 1, 1, 1],
@@ -605,6 +657,34 @@ def make_xyz_label_point_cloud(xyzl, label_type='f'):
 
 
 class PointCloud(object):
+    """ Wrapper for point cloud data.
+
+    The variable members of this class parallel the ones used by
+    the PCD metadata (and similar to PCL and ROS PointCloud2 messages),
+
+    ``pc_data`` holds the actual data as a structured numpy array.
+
+    The other relevant metadata variables are:
+
+    - ``version``: Version, usually .7
+    - ``fields``: Field names, e.g. ``['x', 'y' 'z']``.
+    - ``size.`: Field sizes in bytes, e.g. ``[4, 4, 4]``.
+    - ``count``: Counts per field e.g. ``[1, 1, 1]``. NB: Multi-count field
+      support is sketchy.
+    - ``width``: Number of points, for unstructured point clouds (assumed by
+      most operations).
+    - ``height``: 1 for unstructured point clouds (again, what we assume most
+      of the time.
+    - ``viewpoint``: A pose for the viewpoint of the cloud, as
+      x y z qw qx qy qz, e.g. ``[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]``.
+    - ``points``: Number of points.
+    - ``type``: Data type of each field, e.g. ``[F, F, F]``.
+    - ``data``: Data storage format. One of ``ascii``, ``binary`` or ``binary_compressed``.
+
+    See `PCL docs <http://pointclouds.org/documentation/tutorials/pcd_file_format.php>`__
+    for more information.
+    """
+
     def __init__(self, metadata, pc_data):
         self.metadata_keys = metadata.keys()
         self.__dict__.update(metadata)
@@ -622,7 +702,9 @@ class PointCloud(object):
         # pdb.set_trace()
         md = self.get_metadata()
         assert(_metadata_is_consistent(md))
-        assert(len(self.pc_data) == self.points)
+        print(self.pc_data.size)
+        print(self.points)
+        assert(self.pc_data.size == self.points)
         assert(self.width*self.height == self.points)
         assert(len(self.fields) == len(self.count))
         assert(len(self.fields) == len(self.type))
@@ -668,7 +750,7 @@ class PointCloud(object):
 
     def to_msg(self):
         if not HAS_SENSOR_MSGS:
-            raise NotImplementedError('ROS sensor_msgs not found')
+            raise Exception('ROS sensor_msgs not found')
         # TODO is there some metadata we want to attach?
         return numpy_pc2.array_to_pointcloud2(self.pc_data)
 
@@ -681,8 +763,16 @@ class PointCloud(object):
         return point_cloud_from_fileobj(fileobj)
 
     @staticmethod
+    def from_string(string):
+        return point_cloud_from_string(string)
+
+    @staticmethod
     def from_buffer(buf):
-        return point_cloud_from_buffer(buf)
+        try:
+            return point_cloud_from_buffer(buf)
+        except TypeError:
+            # The old method could handle strings. The new one should also be able to.
+            return PointCloud.from_string(buf)
 
     @staticmethod
     def from_array(arr):
@@ -723,8 +813,8 @@ class PointCloud(object):
               'fields': [],
               'size': [],
               'count': [],
-              'width': 0,
-              'height': 1,
+              'width': msg.width,
+              'height': msg.height,
               'viewpoint': [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
               'points': 0,
               'type': [],
@@ -738,8 +828,9 @@ class PointCloud(object):
             if field.count > 1:
                 warnings.warn('fields with count > 1 are not well tested')
             md['count'].append(field.count)
-        pc_data = np.squeeze(numpy_pc2.pointcloud2_to_array(msg))
-        md['width'] = len(pc_data)
+        pc_array = numpy_pc2.pointcloud2_to_array(msg)
+        pc_data = pc_array.reshape(-1)
+        md['height'], md['width'] = pc_array.shape
         md['points'] = len(pc_data)
         pc = PointCloud(md, pc_data)
         return pc
