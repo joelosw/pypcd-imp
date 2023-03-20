@@ -29,7 +29,7 @@ description = "Pure Python PCD reader/writer"
 # Long description will go up on the pypi page
 long_description = """\
 pypcd_imp
-========
+==========
 
 Pure Python reader/writer for the PCL ``pcd`` data format for point clouds.
 Small Improvements over dimaturas original project.
@@ -45,8 +45,8 @@ for usage, and a DISCLAIMER OF ALL WARRANTIES.
 
 All trademarks referenced herein are property of their respective holders.
 
-Copyright (c) 2015--, Daniel Maturana
-2023 Joel Oswald
+|Copyright (c) 2015--, Daniel Maturana
+|2023 Joel Oswald
 """
 
 NAME = "pypcd_imp"
