@@ -35,7 +35,7 @@ Pure Python reader/writer for the PCL ``pcd`` data format for point clouds.
 
 Please go to the repository README_.
 
-.. _README: https://github.com/dimatura/pypcd/blob/master/README.md
+.. _README: https://github.com/joelosw/pypcd-imp/blob/master/README.md
 
 License
 =======
@@ -46,14 +46,15 @@ for usage, and a DISCLAIMER OF ALL WARRANTIES.
 All trademarks referenced herein are property of their respective holders.
 
 Copyright (c) 2015--, Daniel Maturana
+2023 Joel Oswald
 """
 
-NAME = "pypcd"
-MAINTAINER = "Daniel Maturana"
-MAINTAINER_EMAIL = "dimatura@cmu.edu"
+NAME = "pypcd-imp"
+MAINTAINER = "Joel Oswald"
+MAINTAINER_EMAIL = "joel@stefamon.de"
 DESCRIPTION = description
 LONG_DESCRIPTION = long_description
-URL = "http://github.com/dimatura/pypcd"
+URL = "https://github.com/joelosw/pypcd-imp"
 DOWNLOAD_URL = ""
 LICENSE = "MIT"
 AUTHOR = "Daniel Maturana"

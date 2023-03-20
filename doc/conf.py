@@ -57,8 +57,8 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = 'pypcd'
-copyright = '2015, Daniel Maturana'
+project = 'pypcd-imp'
+copyright = '2015, Daniel Maturana, 2023 Joel Oswald'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
