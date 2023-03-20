@@ -86,7 +86,7 @@ def parse_header(lines):
     for ln in lines:
         if ln.startswith('#') or len(ln) < 2:
             continue
-        match = re.match('(\w+)\s+([\w\s\.]+)', ln)
+        match = re.match('(\w+)\s+([\w\s\.\-]+)', ln)
         if not match:
             warnings.warn("warning: can't understand line: %s" % ln)
             continue
@@ -103,7 +103,7 @@ def parse_header(lines):
             metadata[key] = list(map(float, value.split()))
         elif key == 'data':
             metadata[key] = value.strip().lower()
-        # TODO apparently count is not required?
+
     # add some reasonable defaults
     if 'count' not in metadata:
         metadata['count'] = [1]*len(metadata['fields'])
